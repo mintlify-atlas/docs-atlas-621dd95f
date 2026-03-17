@@ -1,0 +1,121 @@
+---
+title: "Error handling"
+description: "How the backend handles errors using the Result pattern and domain error types."
+---
+
+The backend uses the **Result pattern** instead of thrown exceptions to handle business logic errors. Every use case returns a `Result<T, E>` — controllers inspect the result and translate it into an HTTP response. Exceptions are never thrown across module or layer boundaries.
+
+<Tip>
+  The Result pattern makes error paths explicit and type-safe. When a use case returns `Result<Product>`, you know at compile time that you must handle both the success case (`result.value`) and the failure case (`result.error`) before you can use the data. Thrown exceptions can be silently swallowed or propagate to unexpected places, making them harder to reason about in complex orchestration logic like `ProcessPaymentUseCase`.
+</Tip>
+
+## The Result class
+
+`Result<T, E>` lives in `src/shared/result.ts`. It is a generic wrapper with a private constructor — you always create instances through the static factory methods.
+
+```typescript
+// Create a successful result
+const ok = Result.ok(product);
+
+// Create a failed result
+const fail = Result.fail(new NotFoundError('Producto', id));
+
+// Check which kind you have
+if (result.isFailure) {
+  console.log(result.error.message); // safe to access
+}
+
+if (result.isSuccess) {
+  console.log(result.value); // safe to access
+}
+```
+
+**API reference**
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `Result.ok(value)` | static | Creates a successful result wrapping `value` |
+| `Result.fail(error)` | static | Creates a failed result wrapping `error` |
+| `result.isSuccess` | `boolean` | `true` when the result is successful |
+| `result.isFailure` | `boolean` | `true` when the result is a failure |
+| `result.value` | `T` | The success value. Throws if accessed on a failure |
+| `result.error` | `E` | The error value. Throws if accessed on a success |
+| `result.map(fn)` | `Result<U, E>` | Transforms the success value; passes failures through unchanged |
+| `result.mapAsync(fn)` | `Promise<Result<U, E>>` | Async version of `map` |
+
+## Domain error types
+
+Two domain error classes live in `src/shared/errors/domain-errors.ts`. They extend `Error` and carry a `statusCode` that controllers use to select the right HTTP status.
+
+```typescript
+export class NotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(entity: string, id?: string) {
+    super(
+      id ? `${entity} con id '${id}' no encontrado` : `${entity} no encontrado`,
+    );
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ValidationError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+```
+
+| Error class | Status code | When to use |
+|-------------|-------------|-------------|
+| `NotFoundError` | 404 | Resource looked up by ID does not exist |
+| `ValidationError` | 400 | Business rule violation or invalid input value |
+
+## Controller error mapping
+
+Controllers follow a consistent pattern: call the use case, check `isFailure`, match the error type, and return the appropriate HTTP status with a `{ success: false, message }` body.
+
+```typescript
+async findOne(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
+  const result = await this.getProductByIdUseCase.execute(id);
+
+  if (result.isFailure) {
+    const error = result.error;
+
+    if (error instanceof NotFoundError) {
+      return res
+        .status(HttpStatus.NOT_FOUND)
+        .json({ success: false, message: error.message });
+    }
+    if (error instanceof ValidationError) {
+      return res
+        .status(HttpStatus.BAD_REQUEST)
+        .json({ success: false, message: error.message });
+    }
+
+    // Unexpected infrastructure error
+    return res
+      .status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .json({ success: false, message: error.message });
+  }
+
+  return res
+    .status(HttpStatus.OK)
+    .json({ success: true, data: toProductResponseDto(result.value) });
+}
+```
+
+## HTTP status codes
+
+| Code | Meaning | Triggered by |
+|------|---------|--------------|
+| `200 OK` | Successful read | Use case returns `Result.ok` on a GET |
+| `201 Created` | Resource created | Use case returns `Result.ok` on a POST that creates a resource |
+| `400 Bad Request` | Invalid input | `ValidationError` from a use case |
+| `402 Payment Required` | Payment declined | Wompi returns a declined status |
+| `404 Not Found` | Resource missing | `NotFoundError` from a use case |
+| `500 Internal Server Error` | Unexpected failure | Unhandled infrastructure error wrapped in `Result.fail` |
+| `502 Bad Gateway` | Gateway unreachable | Wompi API did not respond or returned an unexpected error |

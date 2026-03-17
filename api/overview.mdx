@@ -1,0 +1,85 @@
+---
+title: "API overview"
+description: "Base URL, authentication, response format, and error codes for the Mi Tienda REST API."
+---
+
+The Mi Tienda API is a REST API built with NestJS. All endpoints are served under the `/api` prefix and return JSON.
+
+## Base URL
+
+```
+http://localhost:3001/api
+```
+
+The server listens on port `3001` by default. Set the `PORT` environment variable to change it.
+
+<Note>
+  An interactive Swagger UI is available at `http://localhost:3001/api/docs`. Use it to explore and test every endpoint without writing any code.
+</Note>
+
+## Authentication
+
+These endpoints are public and require no authentication headers.
+
+## Response format
+
+Every response uses a consistent envelope:
+
+**Success**
+
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+**Error**
+
+```json
+{
+  "success": false,
+  "message": "Descriptive error message"
+}
+```
+
+## HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Request succeeded |
+| `201` | Resource created |
+| `400` | Validation error — check your request body |
+| `402` | Payment declined by Wompi |
+| `404` | Resource not found |
+| `500` | Internal server error |
+| `502` | Wompi is unreachable or returned an unexpected response |
+
+## All endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/products` | List all products |
+| `GET` | `/api/products/:id` | Get a product by UUID |
+| `GET` | `/api/payments/acceptance-token` | Get a Wompi acceptance token |
+| `POST` | `/api/transactions` | Create a transaction and process payment |
+| `GET` | `/api/transactions/:id` | Get a transaction by UUID |
+| `GET` | `/api/transactions/:id/status` | Poll the current status of a transaction |
+| `GET` | `/api/deliveries/transaction/:transactionId` | Get the delivery for a transaction |
+
+## Explore by resource
+
+<CardGroup cols={2}>
+  <Card title="Products" icon="box" href="/api/products">
+    List and retrieve products available in the store.
+  </Card>
+  <Card title="Payments" icon="credit-card" href="/api/payments">
+    Obtain the Wompi acceptance token required before checkout.
+  </Card>
+  <Card title="Transactions" icon="receipt" href="/api/transactions">
+    Create payment transactions and track their status.
+  </Card>
+  <Card title="Deliveries" icon="truck" href="/api/deliveries">
+    Retrieve delivery records for approved transactions.
+  </Card>
+</CardGroup>

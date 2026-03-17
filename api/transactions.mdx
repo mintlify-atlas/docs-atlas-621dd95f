@@ -1,0 +1,303 @@
+---
+title: "Transactions"
+description: "Endpoints for creating and monitoring payment transactions."
+---
+
+## Create a transaction
+
+<ParamField path="POST /api/transactions" type="endpoint">
+</ParamField>
+
+Creates a transaction and processes payment through Wompi in a single call. The endpoint:
+
+1. Verifies the product exists and has stock.
+2. Creates or retrieves the customer by email.
+3. Calculates the total: `product price + base fee + delivery fee` (all in centavos).
+4. Creates a `PENDING` transaction with a unique reference (`TXN-{timestamp}-{random}`).
+5. Submits the charge to Wompi.
+6. Updates the transaction status with Wompi's response.
+7. If `APPROVED`, creates a delivery record and decrements stock.
+
+<Warning>
+  You must obtain a `cardToken` through Wompi's card tokenization API — never send raw card numbers to this endpoint. See the [Wompi tokenization docs](https://docs.wompi.co) for details.
+</Warning>
+
+### Request body
+
+<ParamField body="productId" type="string" required>
+  UUID of the product to purchase.
+</ParamField>
+
+<ParamField body="customerName" type="string" required>
+  Full name of the customer. Minimum 3 characters.
+</ParamField>
+
+<ParamField body="customerEmail" type="string" required>
+  Email address of the customer. Used to look up or create a customer record.
+</ParamField>
+
+<ParamField body="deliveryAddress" type="string" required>
+  Street address for delivery, e.g. `Calle 123 # 45-67, Apto 201`.
+</ParamField>
+
+<ParamField body="deliveryCity" type="string" required>
+  City for delivery, e.g. `Bogotá`.
+</ParamField>
+
+<ParamField body="deliveryDepartment" type="string" required>
+  Department (state/province) for delivery, e.g. `Cundinamarca`.
+</ParamField>
+
+<ParamField body="cardToken" type="string" required>
+  Card token obtained from Wompi's tokenization step, e.g. `tok_stagtest_5e92...`. This is not the raw card number.
+</ParamField>
+
+<ParamField body="acceptanceToken" type="string" required>
+  Acceptance token obtained from `GET /api/payments/acceptance-token`.
+</ParamField>
+
+<ParamField body="cardLastFour" type="string" required>
+  Last four digits of the card, used for display purposes only, e.g. `4242`.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="transactionId" type="string">
+      UUID of the newly created transaction.
+    </ResponseField>
+    <ResponseField name="reference" type="string">
+      Unique reference sent to Wompi, in the format `TXN-{timestamp}-{random}`.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Payment status returned by Wompi: `PENDING`, `APPROVED`, `DECLINED`, or `ERROR`.
+    </ResponseField>
+    <ResponseField name="totalInCents" type="number">
+      Total amount charged in centavos (product price + base fee + delivery fee).
+    </ResponseField>
+    <ResponseField name="product" type="object">
+      <Expandable title="properties">
+        <ResponseField name="id" type="string">
+          UUID of the purchased product.
+        </ResponseField>
+        <ResponseField name="name" type="string">
+          Name of the purchased product.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="delivery" type="object">
+      <Expandable title="properties">
+        <ResponseField name="address" type="string">
+          Delivery street address.
+        </ResponseField>
+        <ResponseField name="city" type="string">
+          Delivery city.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### HTTP status codes
+
+| Status | Description |
+|--------|-------------|
+| `201` | Transaction created successfully. |
+| `400` | Validation error — a required field is missing or malformed. |
+| `402` | Payment declined by Wompi, or the product is out of stock. |
+| `404` | Product not found. |
+| `500` | Internal server error. |
+| `502` | Could not connect to Wompi. |
+
+### Example request
+
+```json
+{
+  "productId": "550e8400-e29b-41d4-a716-446655440001",
+  "customerName": "Juan Pérez",
+  "customerEmail": "juan@example.com",
+  "deliveryAddress": "Calle 123 # 45-67, Apto 201",
+  "deliveryCity": "Bogotá",
+  "deliveryDepartment": "Cundinamarca",
+  "cardToken": "tok_stagtest_5e92abc...",
+  "acceptanceToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "cardLastFour": "4242"
+}
+```
+
+### Example response
+
+```json
+{
+  "success": true,
+  "data": {
+    "transactionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "reference": "TXN-1700000000000-XYZ123ABC",
+    "status": "APPROVED",
+    "totalInCents": 15500000,
+    "product": {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Audífonos Bluetooth Pro"
+    },
+    "delivery": {
+      "address": "Calle 123 # 45-67, Apto 201",
+      "city": "Bogotá"
+    }
+  }
+}
+```
+
+---
+
+## Get a transaction by ID
+
+<ParamField path="GET /api/transactions/:id" type="endpoint">
+</ParamField>
+
+Returns the full transaction record, including its related `customer` and `product` objects.
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the transaction.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The full transaction entity.
+
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      UUID of the transaction.
+    </ResponseField>
+    <ResponseField name="reference" type="string">
+      Unique Wompi reference in `TXN-{timestamp}-{random}` format.
+    </ResponseField>
+    <ResponseField name="customerId" type="string">
+      UUID of the associated customer.
+    </ResponseField>
+    <ResponseField name="productId" type="string">
+      UUID of the purchased product.
+    </ResponseField>
+    <ResponseField name="productAmountInCents" type="number">
+      Product price at the time of purchase, in centavos.
+    </ResponseField>
+    <ResponseField name="baseFeeInCents" type="number">
+      Base service fee in centavos.
+    </ResponseField>
+    <ResponseField name="deliveryFeeInCents" type="number">
+      Delivery fee in centavos.
+    </ResponseField>
+    <ResponseField name="totalInCents" type="number">
+      Total amount charged in centavos.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Current transaction status: `PENDING`, `APPROVED`, `DECLINED`, `ERROR`, or `VOIDED`.
+    </ResponseField>
+    <ResponseField name="gatewayTransactionId" type="string | null">
+      Wompi's internal transaction ID, or `null` if the charge was never submitted.
+    </ResponseField>
+    <ResponseField name="cardLastFour" type="string | null">
+      Last four digits of the card used, or `null`.
+    </ResponseField>
+    <ResponseField name="deliveryAddress" type="string">
+      Delivery street address.
+    </ResponseField>
+    <ResponseField name="deliveryCity" type="string">
+      Delivery city.
+    </ResponseField>
+    <ResponseField name="deliveryDepartment" type="string">
+      Delivery department.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp of when the transaction was created.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string">
+      ISO 8601 timestamp of the last status update.
+    </ResponseField>
+    <ResponseField name="customer" type="object">
+      Nested customer record.
+    </ResponseField>
+    <ResponseField name="product" type="object">
+      Nested product record.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400` | The `id` parameter is not a valid UUID. |
+| `404` | No transaction found with the given ID. |
+
+---
+
+## Get transaction status
+
+<ParamField path="GET /api/transactions/:id/status" type="endpoint">
+</ParamField>
+
+Returns the current status of a transaction. When the transaction is still `PENDING` and has a Wompi gateway ID, this endpoint queries Wompi directly and updates the local record if the status has changed.
+
+Use this endpoint for polling after calling `POST /api/transactions`.
+
+<Tip>
+  The frontend polls this endpoint with up to 12 attempts at 2.5-second intervals, resolving as soon as the status is no longer `PENDING`. You can replicate this pattern: stop polling once `status` is `APPROVED`, `DECLINED`, `ERROR`, or `VOIDED`.
+</Tip>
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the transaction.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="transactionId" type="string">
+      UUID of the transaction.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Current status: `PENDING`, `APPROVED`, `DECLINED`, `ERROR`, or `VOIDED`.
+    </ResponseField>
+    <ResponseField name="gatewayTransactionId" type="string">
+      Wompi's internal transaction ID. Only present when the status is a final state (`APPROVED`, `DECLINED`, `ERROR`, `VOIDED`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400` | The `id` parameter is not a valid UUID. |
+| `404` | No transaction found with the given ID. |
+
+### Example response
+
+```json
+{
+  "success": true,
+  "data": {
+    "transactionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "status": "APPROVED",
+    "gatewayTransactionId": "wompi-txn-00112233"
+  }
+}
+```

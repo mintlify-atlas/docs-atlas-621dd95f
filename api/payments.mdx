@@ -1,0 +1,52 @@
+---
+title: "Payments"
+description: "Endpoint to obtain the Wompi acceptance token required before processing a payment."
+---
+
+## Get acceptance token
+
+<ParamField path="GET /api/payments/acceptance-token" type="endpoint">
+</ParamField>
+
+Retrieves the acceptance token from Wompi. You must include this token in the `acceptanceToken` field when calling `POST /api/transactions`. It certifies that the user has accepted Wompi's terms and conditions before the payment is processed.
+
+Call this endpoint once at the start of the checkout flow, before tokenizing the card.
+
+<Note>
+  This endpoint proxies a request to the Wompi merchant API using your configured `PAYMENT_PUBLIC_KEY`. Make sure `PAYMENT_PUBLIC_KEY` is set correctly in your environment variables, or this endpoint will return `502`.
+</Note>
+
+### Request parameters
+
+No parameters required.
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="acceptanceToken" type="string">
+      The acceptance token string returned by Wompi. Pass this value as `acceptanceToken` in the transaction request body.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `502` | Wompi could not be reached, or returned an unexpected response. Check that `PAYMENT_PUBLIC_KEY` and `PAYMENT_API_URL` are configured correctly. |
+
+### Example response
+
+```json
+{
+  "success": true,
+  "data": {
+    "acceptanceToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```

@@ -1,0 +1,64 @@
+---
+title: "Backend installation"
+description: "Install and run the NestJS backend API locally."
+---
+
+## Prerequisites
+
+- **Node.js 18+**
+- **PostgreSQL 14+** running locally or accessible remotely
+- **Wompi sandbox credentials** — sign up at [sandbox.wompi.co](https://sandbox.wompi.co) to get your public key, private key, events key, and integrity key
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/jhonarodriguez/payment-checkout-app.git
+    cd payment-checkout-app
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    cd backend
+    npm install
+    ```
+  </Step>
+
+  <Step title="Configure environment">
+    Copy the example file and fill in your values:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    At minimum, set the database credentials and your Wompi sandbox keys. See [Configuration](/backend/configuration) for a full reference of every variable.
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    npm run start:dev
+    ```
+
+    The API is available at `http://localhost:3001/api`. Interactive Swagger docs are at `http://localhost:3001/api/docs`.
+
+    On first boot the server automatically seeds the database with 3 products if the `products` table is empty.
+  </Step>
+</Steps>
+
+<Tip>
+  `start:dev` runs the server in watch mode — NestJS recompiles and restarts automatically whenever you save a TypeScript file. You don't need to restart the server manually during development.
+</Tip>
+
+## Available scripts
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| Development | `npm run start:dev` | Starts the server in watch mode |
+| Build | `npm run build` | Compiles TypeScript to `dist/` |
+| Production | `npm run start:prod` | Runs the compiled build with `node dist/main` |
+| Unit tests | `npm test` | Runs all 125 unit tests with Jest |
+| Test watch | `npm run test:watch` | Runs tests in interactive watch mode |
+| E2E tests | `npm run test:e2e` | Runs end-to-end tests |
+| Coverage | `npm run test:cov` | Runs tests and generates an HTML coverage report |

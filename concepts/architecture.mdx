@@ -1,0 +1,155 @@
+---
+title: "Architecture overview"
+description: "High-level view of the full-stack architecture and the Clean Architecture pattern used in the backend."
+---
+
+Mi Tienda is a full-stack application split into two independently deployable packages.
+
+## Repository structure
+
+```
+payment-checkout-app/
+├── backend/    # REST API — NestJS · Clean Architecture · PostgreSQL · TypeORM
+└── frontend/   # SPA — React 19 · Redux Toolkit · Vite
+```
+
+## Backend architecture
+
+The backend implements **Clean Architecture** with strict layer boundaries. Dependencies always point inward — infrastructure depends on application, which depends on domain. Domain code has no knowledge of NestJS, TypeORM, or any external service.
+
+### Layer structure
+
+```
+infrastructure → application → domain
+```
+
+Each feature module follows this directory layout:
+
+```
+modules/<feature>/
+├── domain/
+│   ├── entities/        # Pure business objects (no ORM decorators)
+│   └── ports/           # Interfaces defining external contracts
+├── application/
+│   └── use-cases/       # Business logic; always return Result<T, E>
+└── infrastructure/
+    ├── adapters/         # TypeORM entities + repository implementations
+    ├── dto/              # Validated DTOs with class-validator and @ApiProperty
+    └── *.controller.ts   # REST controllers
+```
+
+### Modules
+
+The application is composed of five feature modules:
+
+| Module | Use cases | Description |
+|--------|-----------|-------------|
+| `products` | `GetProductsUseCase`, `GetProductByIdUseCase` | Product catalog and stock management |
+| `customers` | `CreateCustomerUseCase` | Create or retrieve a customer by email |
+| `payments` | `GetAcceptanceTokenUseCase` | Proxy the Wompi acceptance token |
+| `transactions` | `ProcessPaymentUseCase`, `GetTransactionStatusUseCase` | Orchestrate the full payment flow |
+| `deliveries` | — | Track delivery records created on approval |
+
+### The `Result<T, E>` pattern
+
+All use cases return a `Result` instead of throwing exceptions. Controllers check `result.isFailure` and map errors to HTTP status codes manually.
+
+```typescript
+// src/shared/result.ts
+export class Result<T, E = Error> {
+  static ok<T>(value: T): Result<T>       // wraps a success value
+  static fail<E>(error: E): Result<any, E> // wraps a domain error
+
+  get isSuccess(): boolean
+  get isFailure(): boolean
+  get value(): T    // throws if isFailure
+  get error(): E    // throws if isSuccess
+
+  map<U>(fn: (value: T) => U): Result<U, E>
+  async mapAsync<U>(fn: (value: T) => Promise<U>): Promise<Result<U, E>>
+}
+```
+
+Example controller response pattern:
+
+```typescript
+if (result.isFailure) {
+  return res.status(404).json({ success: false, message: result.error.message });
+}
+return res.status(200).json({ success: true, data: result.value });
+```
+
+HTTP status codes in use: `200`, `201`, `400`, `402` (payment declined), `404`, `500`, `502` (Wompi unreachable).
+
+### Domain errors
+
+Two domain error types are defined in `src/shared/errors/domain-errors.ts`:
+
+| Error class | HTTP status | When used |
+|-------------|-------------|----------|
+| `NotFoundError` | 404 | Resource does not exist |
+| `ValidationError` | 400 | Business rule violation |
+
+### Injection tokens
+
+Ports are injected using string tokens instead of class references. This keeps use cases decoupled from infrastructure implementations:
+
+```typescript
+// Module registration
+{ provide: 'PRODUCT_REPOSITORY', useClass: ProductTypeOrmRepository }
+
+// Use case constructor
+constructor(@Inject('PRODUCT_REPOSITORY') private repo: ProductRepositoryPort) {}
+```
+
+Token naming convention: `'<ENTITY>_REPOSITORY'` or `'PAYMENT_GATEWAY'`.
+
+## Frontend architecture
+
+The frontend is a React 19 SPA built with Vite. It uses Redux Toolkit for global state and React Router for navigation.
+
+```
+src/
+├── pages/
+│   ├── ProductPage/     # Step 1 — product listing and selection
+│   ├── CheckoutPage/    # Steps 2–3 — card/delivery form and order summary
+│   └── ResultPage/      # Step 4 — transaction result
+├── components/
+│   ├── CreditCardForm/  # Card + delivery form fields
+│   └── PaymentSummary/  # Price breakdown and confirmation
+├── store/
+│   └── slices/
+│       ├── productSlice.ts      # Product list from backend
+│       ├── checkoutSlice.ts     # Full checkout flow state (steps 1–5)
+│       └── transactionSlice.ts  # Processed transaction result
+├── services/
+│   ├── api.ts               # Axios instance with VITE_API_URL base URL
+│   ├── payment.service.ts   # Wompi tokenization and backend transaction calls
+│   └── product.service.ts   # Product fetching
+├── utils/
+│   └── card.utils.ts        # Card formatting, Visa/Mastercard detection, Luhn validation
+└── types/
+    └── index.ts             # Interfaces: Product, CardData, DeliveryData, TransactionResult, ApiResponse
+```
+
+### Routing
+
+Routing is managed by React Router 7. Navigation is driven by `checkoutSlice.currentStep` — the `AppNavigator` component watches the step value and calls `navigate()` on change:
+
+| Route | Page | Steps |
+|-------|------|-------|
+| `/` | `ProductPage` | 1, 5 (reset) |
+| `/checkout` | `CheckoutPage` | 2, 3 |
+| `/result` | `ResultPage` | 4 |
+| `*` | Redirect to `/` | — |
+
+## Learn more
+
+<CardGroup cols={2}>
+  <Card title="Clean Architecture deep dive" icon="layer-group" href="/backend/clean-architecture">
+    Detailed explanation of domain entities, ports, use cases, and adapters in the backend.
+  </Card>
+  <Card title="Checkout steps" icon="list-ol" href="/frontend/checkout-steps">
+    How each step component works, what it renders, and how it interacts with Redux.
+  </Card>
+</CardGroup>

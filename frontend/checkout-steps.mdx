@@ -1,0 +1,65 @@
+---
+title: "Checkout steps"
+description: "The 4-step purchase journey from product selection to payment result."
+---
+
+The checkout flow is a linear 4-step process driven by `checkoutSlice.currentStep`. The `AppNavigator` component in `App.tsx` listens to this value and calls React Router's `navigate` to move the user between routes automatically — no manual URL changes are needed.
+
+## Route table
+
+| Route | Component | Steps |
+|-------|-----------|-------|
+| `/` | `ProductPage` | Step 1 |
+| `/checkout` | `CheckoutPage` | Steps 2 and 3 |
+| `/result` | `ResultPage` | Step 4 |
+| `*` | Redirect to `/` | — |
+
+<Note>
+  The wildcard route (`*`) redirects any unknown URL back to `/`. This prevents users from landing on a blank page if they navigate directly to an unrecognised path.
+</Note>
+
+## Step values
+
+| Value | Meaning |
+|-------|---------|
+| `1` | Product selection (renders `/`) |
+| `2` | Card and delivery form (renders `/checkout`) |
+| `3` | Order summary and confirmation (renders `/checkout`) |
+| `4` | Payment result (renders `/result`) |
+| `5` | Reset — clears state and redirects to `/` |
+
+## Step-by-step walkthrough
+
+### Step 1 — Product selection (`/`)
+
+`ProductPage` fetches the product catalogue from the backend on mount (`GET /api/products`) and renders each product as a card with its name, description, formatted price, and a stock badge. When you click **Pagar con tarjeta** on a product, the page dispatches `selectProduct(productId)`, which sets `selectedProductId` in Redux and advances `currentStep` to `2`. Products with no stock have their button disabled.
+
+### Steps 2–3 — Checkout (`/checkout`)
+
+`CheckoutPage` hosts two sub-views controlled by `currentStep`:
+
+- **Step 2 — Card and delivery form** (`CreditCardForm`): You fill in credit card details (number, holder, expiry, CVV) and delivery information (full name, email, phone, address, city, department). Submitting the form dispatches `setCardData` and `setDeliveryData`, then calls `goToSummary` to advance to step 3.
+- **Step 3 — Order summary** (`PaymentSummary`): Shows the order total with a base fee and a service fee, along with the delivery address. Confirming the order triggers the tokenization and payment processing sequence. The header title updates from **Datos de pago** to **Confirmar pago** and the step indicator reflects the current sub-step.
+
+The **back** button at step 3 returns to step 2 (dispatches `setStep(2)`). At step 2, the back button resets the checkout and navigates to `/`.
+
+### Step 4 — Payment result (`/result`)
+
+`ResultPage` reads `transactionResult` from Redux and renders one of two states:
+
+- **APPROVED**: Displays a success icon, the transaction reference, product name, total paid (formatted as COP), and the delivery address.
+- **DECLINED / ERROR**: Displays a failure icon and the `errorMessage` from the transaction result.
+
+The action button either returns you to the store (APPROVED) or lets you retry (DECLINED/ERROR). Both paths dispatch `resetCheckout` and refetch the product list.
+
+## Payment processing sequence
+
+Once you confirm the order in step 3, the following sequence runs:
+
+1. `startProcessing` is dispatched — sets `isProcessing: true` and clears any previous error.
+2. `GET /api/payments/acceptance-token` — the backend proxies Wompi and returns an `acceptanceToken`.
+3. `POST {VITE_PAYMENT_API_URL}/tokens/cards` — sent **directly from the browser** to Wompi with the card data and `VITE_PAYMENT_PUBLIC_KEY` as a `Bearer` token. Returns a `cardToken`.
+4. `setCardToken` and `setAcceptanceToken` are dispatched to store the tokens in Redux.
+5. `POST /api/transactions` — sends `{ cardToken, acceptanceToken, productId, customerData, deliveryData, cardLastFour }` to the backend. The backend charges the card using the private key.
+6. `GET /api/transactions/:id/status` — polled every 2.5 seconds for up to 12 attempts until the status is no longer `PENDING`.
+7. `paymentSuccess` or `paymentFailed` is dispatched depending on the final status, advancing `currentStep` to `4`.

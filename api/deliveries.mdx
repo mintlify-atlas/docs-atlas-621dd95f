@@ -1,0 +1,83 @@
+---
+title: "Deliveries"
+description: "Endpoint to retrieve delivery information for a completed transaction."
+---
+
+## Get delivery by transaction
+
+<ParamField path="GET /api/deliveries/transaction/:transactionId" type="endpoint">
+</ParamField>
+
+Returns the delivery record associated with the given transaction UUID.
+
+<Note>
+  A delivery record is only created when a transaction reaches the `APPROVED` status. If you call this endpoint for a `PENDING`, `DECLINED`, `ERROR`, or `VOIDED` transaction, you will receive a `404` response.
+</Note>
+
+### Path parameters
+
+<ParamField path="transactionId" type="string" required>
+  UUID of the transaction whose delivery you want to retrieve.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The delivery record.
+
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      UUID of the delivery record.
+    </ResponseField>
+    <ResponseField name="transactionId" type="string">
+      UUID of the associated transaction.
+    </ResponseField>
+    <ResponseField name="customerId" type="string">
+      UUID of the customer who placed the order.
+    </ResponseField>
+    <ResponseField name="address" type="string">
+      Delivery street address.
+    </ResponseField>
+    <ResponseField name="city" type="string">
+      Delivery city.
+    </ResponseField>
+    <ResponseField name="department" type="string">
+      Delivery department (state/province).
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Current delivery status: `PENDING`, `SHIPPED`, or `DELIVERED`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp of when the delivery record was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400` | The `transactionId` parameter is not a valid UUID. |
+| `404` | No delivery found for the given transaction. The transaction may not be approved yet. |
+
+### Example response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "d4e5f6a7-b8c9-0123-def0-123456789abc",
+    "transactionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "customerId": "c9d8e7f6-a5b4-3210-fedc-ba9876543210",
+    "address": "Calle 123 # 45-67, Apto 201",
+    "city": "Bogotá",
+    "department": "Cundinamarca",
+    "status": "PENDING",
+    "createdAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```

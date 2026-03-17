@@ -1,0 +1,85 @@
+---
+title: "Testing"
+description: "Running the 125-unit test suite and interpreting coverage reports."
+---
+
+The backend ships with 125 unit tests across 20 test suites, covering domain entities, use cases, repository adapters, controllers, and the Wompi adapter. Tests run with Jest via `ts-jest`.
+
+## Running tests
+
+```bash
+# Run all unit tests
+npm test
+
+# Run tests in interactive watch mode
+npm run test:watch
+
+# Run tests for a specific module
+npx jest --testPathPattern="products"
+
+# Run end-to-end tests
+npm run test:e2e
+
+# Run unit tests with coverage report
+npm run test:cov
+```
+
+<Tip>
+  Use `--testPathPattern` to scope tests to a single module while you work. For example, `npx jest --testPathPattern="transactions"` runs only the transaction suite, giving you fast feedback without waiting for all 125 tests.
+</Tip>
+
+## Coverage
+
+The test suite achieves the following coverage across all business logic files:
+
+| Metric | Coverage |
+|--------|----------|
+| Statements | 98.86% |
+| Branches | 98.80% |
+| Functions | 92.53% |
+| Lines | 98.74% |
+
+<Note>
+  Coverage is measured on business logic code only. The Jest configuration excludes `main.ts`, `app.module.ts`, `*.module.ts`, and `*.dto.ts` from coverage collection, because these files contain only wiring and declaration code rather than testable logic.
+</Note>
+
+## Coverage report
+
+When you run `npm run test:cov`, Jest writes an HTML report to:
+
+```
+backend/coverage/lcov-report/index.html
+```
+
+Open this file in your browser to see a line-by-line breakdown of which code paths are covered and which are not.
+
+## Test structure
+
+Each module's spec files live alongside the files they test, following the `*.spec.ts` naming convention. The `rootDir` for Jest is `src/`, so all test discovery happens within the source tree.
+
+```
+src/
+├── shared/
+│   ├── result.ts
+│   └── errors/
+│       ├── domain-errors.ts
+│       └── domain-errors.spec.ts
+└── modules/
+    └── products/
+        ├── domain/entities/
+        │   ├── product.ts
+        │   └── product.spec.ts
+        ├── application/use-cases/
+        │   ├── get-products.use-case.ts
+        │   ├── get-products.use-case.spec.ts
+        │   ├── get-product-by-id.use-case.ts
+        │   └── get-product-by-id.use-case.spec.ts
+        └── infrastructure/
+            ├── adapters/
+            │   ├── product.typeorm.repository.ts
+            │   └── product.typeorm.repository.spec.ts
+            └── product.controller.ts
+                product.controller.spec.ts
+```
+
+All tests use Jest mocks — no real database or HTTP connection is required to run the unit suite. The `@nestjs/testing` package is used to build isolated module contexts for controller and use case tests.

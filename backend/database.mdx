@@ -1,0 +1,105 @@
+---
+title: "Database"
+description: "PostgreSQL schema, entities, and seed data used by the backend."
+---
+
+The backend uses PostgreSQL with TypeORM. The schema is managed with `synchronize: true`, which means TypeORM automatically creates and alters tables to match the entity definitions on startup. There are no migration files.
+
+<Warning>
+  `synchronize: true` is convenient for development but can cause data loss in production if entity definitions change. Disable it and use TypeORM migrations before deploying to a production database.
+</Warning>
+
+<Note>
+  All monetary values are stored and transmitted in centavos (COP). Every money column follows the `_in_cents` naming suffix — for example, `price_in_cents`, `total_in_cents`, `base_fee_in_cents`. Divide by 100 to display values in pesos.
+</Note>
+
+## Entities
+
+### products
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key, auto-generated |
+| `name` | varchar(255) | Product display name |
+| `description` | text | Optional product description |
+| `price_in_cents` | integer | Price in centavos COP |
+| `image_url` | varchar(500) | Optional product image URL |
+| `stock` | integer | Available units, defaults to `0` |
+| `created_at` | timestamp | Auto-set on insert |
+| `updated_at` | timestamp | Auto-updated on change |
+
+### customers
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key, auto-generated |
+| `full_name` | varchar(255) | Customer's full name |
+| `email` | varchar(255) | Unique — used to look up existing customers |
+| `phone` | varchar(50) | Optional phone number |
+| `created_at` | timestamp | Auto-set on insert |
+
+### transactions
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key, auto-generated |
+| `reference` | varchar(100) | Unique reference sent to Wompi. Format: `TXN-{timestamp}-{random}` |
+| `customer_id` | UUID | Foreign key → customers |
+| `product_id` | UUID | Foreign key → products |
+| `product_amount_in_cents` | integer | Product price at time of purchase |
+| `base_fee_in_cents` | integer | Service fee captured at purchase time |
+| `delivery_fee_in_cents` | integer | Delivery fee captured at purchase time |
+| `total_in_cents` | integer | Sum of product + base fee + delivery fee |
+| `status` | enum | See transaction status values below |
+| `gateway_transaction_id` | varchar(255) | Wompi's internal transaction ID, nullable |
+| `card_last_four` | varchar(4) | Last four digits of the card used, nullable |
+| `delivery_address` | varchar(500) | Street address for delivery |
+| `delivery_city` | varchar(255) | City for delivery |
+| `delivery_department` | varchar(255) | Department (state) for delivery |
+| `created_at` | timestamp | Auto-set on insert |
+| `updated_at` | timestamp | Auto-updated on change |
+
+**Transaction status values**
+
+| Value | Meaning |
+|-------|---------|
+| `PENDING` | Transaction created, awaiting Wompi response |
+| `APPROVED` | Payment approved by the gateway |
+| `DECLINED` | Payment declined by the gateway |
+| `ERROR` | Wompi returned an error or was unreachable |
+| `VOIDED` | Transaction cancelled after approval |
+
+### deliveries
+
+A delivery record is created automatically when a transaction reaches `APPROVED` status.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key, auto-generated |
+| `transaction_id` | UUID | Foreign key → transactions |
+| `customer_id` | UUID | Foreign key → customers |
+| `address` | varchar(500) | Delivery street address |
+| `city` | varchar(255) | Delivery city |
+| `department` | varchar(255) | Delivery department (state) |
+| `status` | enum | See delivery status values below |
+| `created_at` | timestamp | Auto-set on insert |
+
+**Delivery status values**
+
+| Value | Meaning |
+|-------|---------|
+| `PENDING` | Delivery created, awaiting shipment |
+| `SHIPPED` | Order has been dispatched |
+| `DELIVERED` | Order confirmed delivered |
+
+## Automatic seed
+
+On startup, `src/database/seeds/product.seed.ts` counts the rows in the `products` table. If the table is empty it inserts the following three products:
+
+| Product | Price | Stock |
+|---------|-------|-------|
+| Audífonos Bluetooth Pro | $150.000 COP (15000000 centavos) | 10 |
+| Teclado Mecánico RGB | $250.000 COP (25000000 centavos) | 5 |
+| Mouse Inalámbrico Ergonómico | $80.000 COP (8000000 centavos) | 15 |
+
+If rows already exist the seed is skipped. You can re-trigger it by truncating the `products` table and restarting the server.

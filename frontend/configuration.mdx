@@ -1,0 +1,59 @@
+---
+title: "Configuration"
+description: "Environment variables for the React frontend."
+---
+
+The frontend is configured via a `.env` file in the `frontend/` directory. Copy `.env.example` to `.env` and fill in the required values before starting the app.
+
+```bash
+cp .env.example .env
+```
+
+## Environment variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_API_URL` | Base URL of the backend API | `http://localhost:3001/api` |
+| `VITE_PAYMENT_API_URL` | Base URL of the Wompi API | `https://api-sandbox.co.uat.wompi.dev/v1` |
+| `VITE_PAYMENT_PUBLIC_KEY` | Wompi public key used for card tokenization | — (required) |
+
+### VITE_API_URL
+
+Points to the backend REST API. All Axios requests in `api.ts` use this as their `baseURL`. Change this when deploying to a non-local environment.
+
+```env
+VITE_API_URL=http://localhost:3001/api
+```
+
+### VITE_PAYMENT_API_URL
+
+Base URL for direct calls to the Wompi API — specifically for card tokenization (`POST /tokens/cards`). The default value targets the Wompi sandbox environment.
+
+```env
+VITE_PAYMENT_API_URL=https://api-sandbox.co.uat.wompi.dev/v1
+```
+
+### VITE_PAYMENT_PUBLIC_KEY
+
+The Wompi public key sent as a `Bearer` token in the `Authorization` header when tokenizing a card directly from the browser. This is the only variable without a default — you must provide it.
+
+```env
+VITE_PAYMENT_PUBLIC_KEY=pub_stagtest_xxxxxxxxxxxx
+```
+
+<Warning>
+  Only set `VITE_PAYMENT_PUBLIC_KEY` here — never put the Wompi **private key** in the frontend. The private key is used exclusively by the backend to charge the card. Exposing it in the client bundle would allow anyone to initiate transactions on your behalf.
+</Warning>
+
+## How Vite exposes environment variables
+
+Vite only exposes variables prefixed with `VITE_` to the compiled client bundle. Any variable in `.env` that does **not** start with `VITE_` is available to the build process but is stripped from the browser bundle. Access them in TypeScript via `import.meta.env`:
+
+```typescript
+const apiUrl = import.meta.env.VITE_API_URL;
+const publicKey = import.meta.env.VITE_PAYMENT_PUBLIC_KEY;
+```
+
+<Note>
+  To get your Wompi sandbox credentials, sign up at the [Wompi developer dashboard](https://developers.wompi.co). Under your sandbox environment, find the **Public key** (starts with `pub_stagtest_`) and paste it into `VITE_PAYMENT_PUBLIC_KEY`. Never use production keys against the sandbox API.
+</Note>

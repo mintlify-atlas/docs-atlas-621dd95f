@@ -1,0 +1,165 @@
+---
+title: "Products"
+description: "Endpoints for listing and retrieving products."
+---
+
+## List all products
+
+<ParamField path="GET /api/products" type="endpoint">
+</ParamField>
+
+Returns every product in the catalog. Only products with `stockUnits > 0` are shown in the storefront, but the endpoint returns all records.
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of product objects.
+
+  <Expandable title="Product object">
+    <ResponseField name="id" type="string">
+      UUID of the product.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Display name of the product.
+    </ResponseField>
+    <ResponseField name="description" type="string | null">
+      Optional product description.
+    </ResponseField>
+    <ResponseField name="priceInCents" type="number">
+      Price in Colombian pesos centavos. Divide by 100 to get the COP amount.
+    </ResponseField>
+    <ResponseField name="formattedPrice" type="string">
+      Human-readable price string, e.g. `COP 150,000`.
+    </ResponseField>
+    <ResponseField name="imageUrl" type="string | null">
+      URL of the product image, or `null` if none is set.
+    </ResponseField>
+    <ResponseField name="stockUnits" type="number">
+      Number of units currently available.
+    </ResponseField>
+    <ResponseField name="hasStock" type="boolean">
+      `true` when `stockUnits > 0`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example response
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Audífonos Bluetooth Pro",
+      "description": "Audífonos inalámbricos con cancelación de ruido activa",
+      "priceInCents": 15000000,
+      "formattedPrice": "COP 150,000",
+      "imageUrl": "https://example.com/audifonos.jpg",
+      "stockUnits": 10,
+      "hasStock": true
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Teclado Mecánico RGB",
+      "description": null,
+      "priceInCents": 25000000,
+      "formattedPrice": "COP 250,000",
+      "imageUrl": null,
+      "stockUnits": 5,
+      "hasStock": true
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "name": "Mouse Inalámbrico Ergonómico",
+      "description": null,
+      "priceInCents": 8000000,
+      "formattedPrice": "COP 80,000",
+      "imageUrl": null,
+      "stockUnits": 15,
+      "hasStock": true
+    }
+  ]
+}
+```
+
+---
+
+## Get a product by ID
+
+<ParamField path="GET /api/products/:id" type="endpoint">
+</ParamField>
+
+Returns a single product by its UUID.
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the product to retrieve.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The product object.
+
+  <Expandable title="Product object">
+    <ResponseField name="id" type="string">
+      UUID of the product.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Display name of the product.
+    </ResponseField>
+    <ResponseField name="description" type="string | null">
+      Optional product description.
+    </ResponseField>
+    <ResponseField name="priceInCents" type="number">
+      Price in Colombian pesos centavos.
+    </ResponseField>
+    <ResponseField name="formattedPrice" type="string">
+      Human-readable price string, e.g. `COP 150,000`.
+    </ResponseField>
+    <ResponseField name="imageUrl" type="string | null">
+      URL of the product image, or `null` if none is set.
+    </ResponseField>
+    <ResponseField name="stockUnits" type="number">
+      Number of units currently available.
+    </ResponseField>
+    <ResponseField name="hasStock" type="boolean">
+      `true` when `stockUnits > 0`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400` | The `id` parameter is not a valid UUID. |
+| `404` | No product found with the given ID. |
+
+### Example response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "Audífonos Bluetooth Pro",
+    "description": "Audífonos inalámbricos con cancelación de ruido activa",
+    "priceInCents": 15000000,
+    "formattedPrice": "COP 150,000",
+    "imageUrl": "https://example.com/audifonos.jpg",
+    "stockUnits": 10,
+    "hasStock": true
+  }
+}
+```

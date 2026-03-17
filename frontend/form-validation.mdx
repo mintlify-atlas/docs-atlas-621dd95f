@@ -1,0 +1,103 @@
+---
+title: "Form validation"
+description: "Validation rules for the credit card and delivery forms."
+---
+
+The checkout form in `CreditCardForm` is managed with [React Hook Form](https://react-hook-form.com/) (v7). Validation runs on submit and, for the card number, in real time as you type.
+
+## Validation rules
+
+### Credit card fields
+
+| Field | Rules |
+|-------|-------|
+| Card number | Required · exactly 16 digits · must pass the Luhn algorithm |
+| Card holder | Required · minimum 3 characters |
+| Expiry (MM/AA) | Required · format `^\d{2}/\d{2}$` · month must be 1–12 · year must be ≥ 2024 |
+| CVV | Required · 3–4 digits |
+
+### Delivery fields
+
+| Field | Rules |
+|-------|-------|
+| Full name | Required · minimum 3 characters |
+| Email | Required · valid email format |
+| Phone | Optional · 7–10 digits if provided |
+| Address | Required · minimum 5 characters |
+| City | Required |
+| Department | Required |
+
+## Luhn algorithm
+
+Card numbers are validated client-side using the standard [Luhn algorithm](https://en.wikipedia.org/wiki/Luhn_algorithm), implemented in `src/utils/card.utils.ts`:
+
+```typescript
+export function validateLuhn(number: string): boolean {
+  const digits = number.replace(/\D/g, '');
+
+  if (digits.length < 13 || digits.length > 19) return false;
+
+  let sum = 0;
+  let isEven = false;
+
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits[i], 10);
+
+    if (isEven) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+
+    sum += digit;
+    isEven = !isEven;
+  }
+
+  return sum % 10 === 0;
+}
+```
+
+The function strips all non-digit characters, then iterates right to left — doubling every second digit and subtracting 9 if the result exceeds 9. The card number is valid when the final sum is divisible by 10.
+
+## Expiry validation
+
+The expiry field accepts input in `MM/AA` format. The `formatExpiry` utility automatically inserts the `/` separator as you type. Validation uses `validateExpiry` from `card.utils.ts`, which:
+
+1. Converts the two-digit year to a four-digit year (`20YY`).
+2. Rejects months outside 1–12.
+3. Rejects years below 2024.
+4. Checks that the card's last day of the expiry month is on or after today's date.
+
+## Real-time card brand detection
+
+As you type the card number, `detectCardBrand` identifies the card network and updates the UI immediately:
+
+```typescript
+export function detectCardBrand(number: string): CardBrand {
+  const cleaned = number.replace(/\D/g, '');
+
+  if (cleaned.length === 0) return 'unknown';
+
+  if (/^4/.test(cleaned)) return 'visa';
+
+  if (/^5[1-5]/.test(cleaned)) return 'mastercard';
+
+  if (cleaned.length >= 4) {
+    const prefix = parseInt(cleaned.substring(0, 4), 10);
+    if (prefix >= 2221 && prefix <= 2720) return 'mastercard';
+  }
+
+  return 'unknown';
+}
+```
+
+| Brand | Detection rule |
+|-------|----------------|
+| Visa | First digit is `4` |
+| Mastercard | First two digits are `51`–`55`, or first four digits are in the range `2221`–`2720` |
+| Unknown | No match |
+
+The card number is also automatically formatted with spaces every 4 digits (`4111 1111 1111 1111`) by `formatCardNumber` as the user types.
+
+<Tip>
+  When testing against the Wompi sandbox, use card numbers that start with `4` (Visa). A commonly used test number is `4111 1111 1111 1111` — it passes Luhn validation and is recognised as a Visa card. Check the [Wompi sandbox documentation](https://docs.wompi.co) for the full list of test card numbers and their expected outcomes (approved, declined, etc.).
+</Tip>

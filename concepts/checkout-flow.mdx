@@ -1,0 +1,95 @@
+---
+title: "Checkout flow"
+description: "How the 4-step purchase journey works from product selection to payment result."
+---
+
+Mi Tienda guides the user through four visible steps. Under the hood those four steps map to a 7-stage flow that includes tokenization, backend processing, and result polling.
+
+## The four steps
+
+| Step | Route | Description |
+|------|-------|-------------|
+| 1 — Product selection | `/` | Browse the product list and choose an item |
+| 2 — Payment & delivery form | `/checkout` | Enter card details and delivery address |
+| 3 — Order summary | `/checkout` | Review totals and confirm before submitting |
+| 4 — Result | `/result` | See the final payment outcome |
+
+Navigation between routes is driven by `checkoutSlice.currentStep` in Redux. The `AppNavigator` component watches this value and calls `navigate()` whenever it changes:
+
+```typescript
+// frontend/src/App.tsx
+if (currentStep === 1 || currentStep === 5) navigate('/');
+else if (currentStep === 2 || currentStep === 3) navigate('/checkout');
+else if (currentStep === 4) navigate('/result');
+```
+
+## Redux step values
+
+`checkoutSlice` uses integer values 1–5 to represent the entire flow:
+
+| `currentStep` | Meaning |
+|---------------|---------|
+| `1` | Product selection (initial state) |
+| `2` | Payment and delivery form |
+| `3` | Order summary and confirmation |
+| `4` | Result page |
+| `5` | Reset — returns the user to step 1 |
+
+Step 5 is not a real page. It is a transient signal that triggers `resetCheckout` and redirects back to `/`.
+
+## The 7-stage flow
+
+Each purchase moves through these stages in order:
+
+```
+[1] Product selection
+        ↓
+[2] Payment & delivery form
+        ↓
+[3] Order summary
+        ↓
+[4] Tokenization  (browser → Wompi directly)
+        ↓
+[5] Processing    (browser → backend → Wompi)
+        ↓
+[6] Polling       (browser polls backend, max 12 attempts × 2.5 s)
+        ↓
+[7] Result        (APPROVED / DECLINED / ERROR)
+```
+
+Stages 4–6 all happen in the background while the user sees the result page loading. See [Payment tokenization](/concepts/payment-tokenization) for a detailed breakdown of stages 4–6.
+
+<Note>
+  Card data never reaches the backend. The frontend sends the raw card fields directly to Wompi's API and receives a short-lived token. Only that token is sent to your server.
+</Note>
+
+## State managed by `checkoutSlice`
+
+The slice holds all data needed across the entire journey:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `currentStep` | `1–5` | Active step in the flow |
+| `selectedProductId` | `string \| null` | UUID of the chosen product |
+| `cardData` | `CardData \| null` | Full card fields entered by the user |
+| `deliveryData` | `DeliveryData \| null` | Name, email, phone, address, city, department |
+| `cardToken` | `string \| null` | Token returned by Wompi after tokenization |
+| `acceptanceToken` | `string \| null` | Wompi acceptance token from the backend proxy |
+| `transactionId` | `string \| null` | UUID of the transaction record in the backend |
+| `transactionResult` | `TransactionResult \| null` | Final payment result |
+| `isProcessing` | `boolean` | `true` while a payment is in flight |
+| `error` | `string \| null` | Error message to surface in the UI |
+
+Available actions: `selectProduct`, `setCardData`, `setCardToken`, `setDeliveryData`, `setAcceptanceToken`, `goToSummary`, `startProcessing`, `paymentSuccess`, `paymentFailed`, `resetCheckout`.
+
+## localStorage persistence
+
+The checkout state is partially persisted to `localStorage` under the key `checkout_progress`. The following fields survive a page refresh:
+
+- `currentStep`
+- `selectedProductId`
+- `deliveryData`
+- `transactionId`
+- `transactionResult`
+
+Sensitive card fields (`cardData`, `cardToken`, `acceptanceToken`) are never written to `localStorage`.

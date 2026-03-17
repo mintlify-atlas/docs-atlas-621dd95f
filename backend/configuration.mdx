@@ -1,0 +1,82 @@
+---
+title: "Configuration"
+description: "All environment variables for the NestJS backend."
+---
+
+The backend reads configuration from a `.env` file in the `backend/` directory. Copy `.env.example` to `.env` and fill in the required values before starting the server.
+
+```bash
+cp .env.example .env
+```
+
+<Warning>
+  Never commit real private keys or passwords to version control. Add `.env` to your `.gitignore` and use environment secrets in production deployments.
+</Warning>
+
+## Database
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `DB_HOST` | PostgreSQL host | `localhost` | No |
+| `DB_PORT` | PostgreSQL port | `5432` | No |
+| `DB_USER` | Database username | — | **Yes** |
+| `DB_PASS` | Database password | — | **Yes** |
+| `DB_NAME` | Database name | `checkout_db` | No |
+
+## Wompi payment gateway
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `PAYMENT_PUBLIC_KEY` | Wompi public key (`pub_stagtest_...`) | — | **Yes** |
+| `PAYMENT_PRIVATE_KEY` | Wompi private key (`prv_stagtest_...`) | — | **Yes** |
+| `PAYMENT_EVENTS_KEY` | Wompi events key for webhook signature validation | — | **Yes** |
+| `PAYMENT_INTEGRITY_KEY` | Wompi integrity key used in the SHA256 transaction hash | — | **Yes** |
+| `PAYMENT_API_URL` | Base URL of the Wompi API | `https://api-sandbox.co.uat.wompi.dev/v1` | No |
+
+The default `PAYMENT_API_URL` points to the Wompi sandbox environment. No real payments are processed against this URL. To switch to production, change the URL to the Wompi production endpoint and use your live credentials.
+
+<Warning>
+  `PAYMENT_PRIVATE_KEY` and `PAYMENT_INTEGRITY_KEY` are used server-side only to sign requests and generate integrity hashes. Never expose them to the browser or include them in frontend environment files.
+</Warning>
+
+## Server
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `PORT` | HTTP port the server listens on | `3001` | No |
+| `FRONTEND_URL` | Origin allowed by CORS (comma-separated for multiple) | `http://localhost:5173` | No |
+
+The `FRONTEND_URL` variable controls which origins the backend accepts cross-origin requests from. In development this is usually `http://localhost:5173`. In production, set it to your deployed frontend URL.
+
+## Fee configuration
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `BASE_FEE_IN_CENTS` | Base service fee added to every transaction | `300000` | No |
+| `DELIVERY_FEE_IN_CENTS` | Delivery fee added to every transaction | `200000` | No |
+
+<Note>
+  Fee values are stored and transmitted in centavos (COP). For example, `300000` equals $3.000 COP and `200000` equals $2.000 COP. This matches the `_in_cents` naming convention used throughout the codebase and the Wompi API.
+</Note>
+
+## Full `.env.example`
+
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=
+DB_PASS=
+DB_NAME=checkout_db
+
+PAYMENT_PUBLIC_KEY=
+PAYMENT_PRIVATE_KEY=
+PAYMENT_EVENTS_KEY=
+PAYMENT_INTEGRITY_KEY=
+PAYMENT_API_URL=https://api-sandbox.co.uat.wompi.dev/v1
+
+PORT=3001
+FRONTEND_URL=http://localhost:5173
+
+BASE_FEE_IN_CENTS=300000
+DELIVERY_FEE_IN_CENTS=200000
+```

@@ -1,0 +1,129 @@
+---
+title: "Payment tokenization"
+description: "How Mi Tienda uses Wompi to tokenize cards securely in the browser."
+---
+
+## Why tokenization matters
+
+Handling raw card numbers on your own server requires PCI DSS Level 1 compliance — a costly and complex certification. Tokenization removes that burden: the browser sends card fields directly to Wompi, which returns a short-lived opaque token. Your backend never sees the card number, expiry date, or CVC.
+
+In Mi Tienda:
+
+- The frontend calls Wompi's tokenization endpoint directly from the browser.
+- Only the resulting token (plus metadata like the last four digits) is sent to the backend.
+- The backend uses its private key to process the actual charge with Wompi.
+
+<Warning>
+  `VITE_PAYMENT_PUBLIC_KEY` must be your Wompi **public** key (`pub_stagtest_...`). Never use the private key (`prv_stagtest_...`) in frontend environment variables — it would be exposed in the browser.
+</Warning>
+
+## Tokenization sequence
+
+<Steps>
+  <Step title="Fetch the acceptance token">
+    Before tokenizing the card, the frontend retrieves a Wompi acceptance token. This token represents the user's agreement to Wompi's terms and is required for every transaction.
+
+    ```
+    GET /api/payments/acceptance-token
+    ```
+
+    The backend proxies the request to Wompi using its private key and returns the token:
+
+    ```json
+    {
+      "success": true,
+      "data": {
+        "acceptanceToken": "eyJhbGciOiJIUzI1NiJ9..."
+      }
+    }
+    ```
+
+    The token is stored in `checkoutSlice.acceptanceToken`.
+  </Step>
+
+  <Step title="Tokenize the card directly with Wompi">
+    The frontend posts the raw card fields directly to Wompi — bypassing the backend entirely. The `Authorization` header uses the Wompi **public** key.
+
+    ```
+    POST {VITE_PAYMENT_API_URL}/tokens/cards
+    Authorization: Bearer {VITE_PAYMENT_PUBLIC_KEY}
+    Content-Type: application/json
+    ```
+
+    Request body:
+
+    ```json
+    {
+      "number": "4111111111111111",
+      "card_holder": "Jane Doe",
+      "exp_month": "12",
+      "exp_year": "28",
+      "cvc": "123"
+    }
+    ```
+
+    Wompi returns a card token ID (e.g., `tok_stagtest_...`). This token is short-lived and single-use. It is stored in `checkoutSlice.cardToken`.
+  </Step>
+
+  <Step title="Submit the transaction to the backend">
+    With both tokens in hand, the frontend posts the transaction to the backend. The request body contains the card token — not the card number.
+
+    ```
+    POST /api/transactions
+    ```
+
+    Request body:
+
+    ```json
+    {
+      "productId": "uuid-of-selected-product",
+      "customerName": "Jane Doe",
+      "customerEmail": "jane@example.com",
+      "deliveryAddress": "Calle 123 # 45-67",
+      "deliveryCity": "Bogotá",
+      "deliveryDepartment": "Cundinamarca",
+      "cardToken": "tok_stagtest_...",
+      "acceptanceToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "cardLastFour": "1111"
+    }
+    ```
+
+    The backend's `ProcessPaymentUseCase` then:
+
+    1. Verifies the product exists and has stock
+    2. Creates or retrieves the customer by email
+    3. Calculates the total: `product price + BASE_FEE_IN_CENTS + DELIVERY_FEE_IN_CENTS`
+    4. Creates a `PENDING` transaction with reference `TXN-{timestamp}-{random}`
+    5. Calls Wompi with a SHA-256 integrity hash: `SHA256(reference + amount + "COP" + integrityKey)`
+    6. Updates the transaction status based on Wompi's response
+    7. If `APPROVED`: creates a delivery record and decrements stock
+  </Step>
+
+  <Step title="Poll for the final status">
+    Wompi transactions can remain in `PENDING` for a few seconds while the payment network processes the charge. The frontend polls the backend until a final status is received.
+
+    ```
+    GET /api/transactions/:id/status
+    ```
+
+    Polling parameters (from `payment.service.ts`):
+
+    | Parameter | Value |
+    |-----------|-------|
+    | Max attempts | 12 |
+    | Interval | 2500 ms |
+    | Terminal statuses | `APPROVED`, `DECLINED`, `ERROR`, `VOIDED` |
+
+    If no terminal status is received after 12 attempts (30 seconds total), the service returns `ERROR`.
+  </Step>
+</Steps>
+
+## Security summary
+
+| What happens | Where |
+|-------------|-------|
+| Card fields entered | Browser only |
+| Card tokenization | Browser → Wompi directly |
+| Card token sent | Browser → your backend |
+| Charge executed | Your backend → Wompi (private key) |
+| Raw card data stored | Nowhere — never persisted |

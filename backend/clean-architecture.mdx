@@ -1,0 +1,156 @@
+---
+title: "Clean Architecture"
+description: "How the NestJS backend implements Clean Architecture with strict layer separation."
+---
+
+The backend applies Clean Architecture across all five DDD modules. Dependencies flow in one direction — from the outermost layer inward — so business logic never depends on infrastructure concerns like databases or HTTP frameworks.
+
+## Dependency flow
+
+```
+infrastructure → application → domain
+```
+
+- **Infrastructure** depends on **Application** (calls use cases) and **Domain** (implements ports)
+- **Application** depends on **Domain** (uses entities and port interfaces)
+- **Domain** depends on nothing — it has no framework imports
+
+## Directory structure
+
+Every module follows the same layout:
+
+```
+modules/<feature>/
+├── domain/
+│   ├── entities/        # Pure business objects (no ORM decorators)
+│   └── ports/           # Interfaces that define external contracts
+├── application/
+│   └── use-cases/       # Business logic; return Result<T, E>
+└── infrastructure/
+    ├── adapters/         # TypeORM entities + repository implementations
+    ├── dto/              # Request/response DTOs with class-validator
+    └── *.controller.ts  # REST controllers
+```
+
+## Layers explained
+
+### Domain layer
+
+The domain layer contains pure TypeScript classes and interfaces with no NestJS or TypeORM imports. It defines:
+
+- **Entities** — plain business objects with methods that encode business rules (e.g., `product.hasStock()`)
+- **Ports** — interfaces that describe what the application layer needs from the outside world (repositories, payment gateways)
+
+```typescript
+// domain/ports/product.repository.port.ts
+export interface ProductRepositoryPort {
+  findAll(): Promise<Product[]>;
+  findById(id: string): Promise<Product | null>;
+  decrementStock(productId: string): Promise<void>;
+}
+```
+
+### Application layer
+
+The application layer contains use cases — classes decorated with `@Injectable()` that orchestrate business logic. Each use case:
+
+- Receives a port interface via constructor injection (never a concrete class)
+- Returns `Result<T, E>` — never throws exceptions from business logic
+- Has no knowledge of HTTP, TypeORM, or Wompi SDK internals
+
+```typescript
+// application/use-cases/get-product-by-id.use-case.ts
+@Injectable()
+export class GetProductByIdUseCase {
+  constructor(
+    @Inject('PRODUCT_REPOSITORY')
+    private readonly productRepository: ProductRepositoryPort,
+  ) {}
+
+  async execute(productId: string): Promise<Result<Product>> {
+    const product = await this.productRepository.findById(productId);
+    if (!product) {
+      return Result.fail(new NotFoundError('Producto', productId));
+    }
+    return Result.ok(product);
+  }
+}
+```
+
+### Infrastructure layer
+
+The infrastructure layer wires everything together. It contains:
+
+- **TypeORM entities** — decorated classes that map to database tables
+- **Repository adapters** — classes that implement port interfaces using TypeORM
+- **DTOs** — request and response shapes validated with `class-validator` and documented with `@ApiProperty`
+- **Controllers** — REST endpoints that call use cases and map `Result<T, E>` to HTTP responses
+
+## Injection tokens
+
+Ports are injected using string tokens, not class references. This keeps the application layer independent of concrete implementations.
+
+```typescript
+// In the NestJS module:
+{ provide: 'PRODUCT_REPOSITORY', useClass: ProductTypeOrmRepository }
+{ provide: 'PAYMENT_GATEWAY', useClass: WompiAdapter }
+
+// In the use case constructor:
+constructor(
+  @Inject('PRODUCT_REPOSITORY') private repo: ProductRepositoryPort,
+  @Inject('PAYMENT_GATEWAY') private paymentGateway: PaymentGatewayPort,
+) {}
+```
+
+Convention: repository tokens use the pattern `'<ENTITY>_REPOSITORY'` (e.g., `'TRANSACTION_REPOSITORY'`, `'DELIVERY_REPOSITORY'`). The payment gateway uses `'PAYMENT_GATEWAY'`.
+
+## Controller response pattern
+
+Controllers never throw exceptions. They call a use case, inspect the `Result`, and return a consistent JSON shape:
+
+```typescript
+async findOne(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
+  const result = await this.getProductByIdUseCase.execute(id);
+
+  if (result.isFailure) {
+    const error = result.error;
+
+    if (error instanceof NotFoundError) {
+      return res.status(HttpStatus.NOT_FOUND)
+        .json({ success: false, message: error.message });
+    }
+    if (error instanceof ValidationError) {
+      return res.status(HttpStatus.BAD_REQUEST)
+        .json({ success: false, message: error.message });
+    }
+
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .json({ success: false, message: error.message });
+  }
+
+  return res.status(HttpStatus.OK)
+    .json({ success: true, data: toProductResponseDto(result.value) });
+}
+```
+
+**Success response shape:**
+```json
+{ "success": true, "data": { ... } }
+```
+
+**Error response shape:**
+```json
+{ "success": false, "message": "Producto con id '...' no encontrado" }
+```
+
+## HTTP status codes
+
+| Code | When used |
+|------|-----------|
+| `200 OK` | Successful read operation |
+| `201 Created` | Successful resource creation |
+| `400 Bad Request` | `ValidationError` from business logic |
+| `402 Payment Required` | Payment declined by Wompi |
+| `404 Not Found` | `NotFoundError` from business logic |
+| `500 Internal Server Error` | Unexpected infrastructure error |
+| `502 Bad Gateway` | Wompi API unreachable |

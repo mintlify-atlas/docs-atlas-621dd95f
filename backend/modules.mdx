@@ -1,0 +1,211 @@
+---
+title: "Modules"
+description: "The five DDD modules and their use cases."
+---
+
+The backend is organized into five NestJS modules, each representing a bounded context in the checkout domain. Every module owns its domain entities, port interfaces, use cases, and infrastructure adapters.
+
+## Module overview
+
+| Module | Use cases |
+|--------|----------|
+| `products` | `GetProductsUseCase`, `GetProductByIdUseCase` |
+| `customers` | `CreateCustomerUseCase` |
+| `payments` | `GetAcceptanceTokenUseCase`, `GetTransactionStatusUseCase` |
+| `transactions` | `ProcessPaymentUseCase` |
+| `deliveries` | _(no public use cases; records created by `ProcessPaymentUseCase`)_ |
+
+## Modules
+
+<AccordionGroup>
+  <Accordion title="products">
+    The products module exposes the catalog of purchasable items. It provides two use cases consumed by `GET /api/products` and `GET /api/products/:id`.
+
+    **Port interface**
+
+    ```typescript
+    // domain/ports/product.repository.port.ts
+    export interface ProductRepositoryPort {
+      findAll(): Promise<Product[]>;
+      findById(id: string): Promise<Product | null>;
+      decrementStock(productId: string): Promise<void>;
+    }
+    ```
+
+    Injection token: `'PRODUCT_REPOSITORY'`
+
+    **Use cases**
+
+    | Class | Description |
+    |-------|-------------|
+    | `GetProductsUseCase` | Returns all products. Always succeeds — infrastructure errors are wrapped in `Result.fail`. |
+    | `GetProductByIdUseCase` | Returns a single product by UUID. Returns `NotFoundError` if the product does not exist, `ValidationError` if the ID is not a string. |
+  </Accordion>
+
+  <Accordion title="customers">
+    The customers module manages buyer identity. Customers are identified by email — the same email always maps to the same customer record.
+
+    **Port interface**
+
+    ```typescript
+    // domain/ports/customer.repository.port.ts
+    export interface CustomerRepositoryPort {
+      findByEmail(email: string): Promise<Customer | null>;
+      create(data: { fullName: string; email: string }): Promise<Customer>;
+    }
+    ```
+
+    Injection token: `'CUSTOMER_REPOSITORY'`
+
+    **Use cases**
+
+    | Class | Description |
+    |-------|-------------|
+    | `CreateCustomerUseCase` | Looks up a customer by email. If one exists it is returned; otherwise a new customer is created. This upsert behaviour means processing two orders from the same email address shares a single customer record. |
+  </Accordion>
+
+  <Accordion title="payments">
+    The payments module is the boundary between the application and the Wompi payment gateway. It exposes the `WompiAdapter` (implementing `PaymentGatewayPort`) and provides two use cases.
+
+    **Port interface**
+
+    ```typescript
+    // domain/ports/payment-gateway.port.ts
+    export interface PaymentGatewayPort {
+      getAcceptanceToken(): Promise<Result<string>>;
+      processPayment(input: ProcessPaymentInput): Promise<Result<ProcessPaymentOutput>>;
+    }
+    ```
+
+    Injection token: `'PAYMENT_GATEWAY'`
+
+    **Use cases**
+
+    | Class | Description |
+    |-------|-------------|
+    | `GetAcceptanceTokenUseCase` | Calls `GET /merchants/{publicKey}` on the Wompi API and extracts `presigned_acceptance.acceptance_token`. The frontend must send this token with every transaction. |
+    | `GetTransactionStatusUseCase` | Queries the current status of a Wompi transaction by its gateway ID. Used by the frontend polling loop after payment submission. |
+
+    The `WompiAdapter` generates the SHA256 integrity hash required by Wompi:
+
+    ```typescript
+    // Integrity hash formula:
+    SHA256(reference + amountInCents + "COP" + integrityKey)
+    ```
+  </Accordion>
+
+  <Accordion title="transactions">
+    The transactions module orchestrates the full payment flow. It is the most complex module, coordinating four other modules through their port interfaces.
+
+    **Port interface**
+
+    ```typescript
+    // domain/ports/transaction.repository.port.ts
+    export interface TransactionRepositoryPort {
+      create(data: any): Promise<TransactionEntity>;
+      findById(id: string): Promise<TransactionEntity | null>;
+      updateStatus(
+        id: string,
+        status: TransactionStatus,
+        gatewayTransactionId: string | null,
+      ): Promise<void>;
+    }
+    ```
+
+    Injection token: `'TRANSACTION_REPOSITORY'`
+
+    **Use cases**
+
+    | Class | Description |
+    |-------|-------------|
+    | `ProcessPaymentUseCase` | Orchestrates the full 8-step payment flow (see below). |
+
+    ### ProcessPaymentUseCase — 8-step payment flow
+
+    `POST /api/transactions` triggers `ProcessPaymentUseCase.execute()`, which runs these steps in sequence. The use case returns immediately with an error result if any step fails.
+
+    <Steps>
+      <Step title="Verify product exists and has stock">
+        Calls `ProductRepositoryPort.findById()`. Returns `NotFoundError` if the product does not exist. Returns a `ValidationError` if stock is zero.
+      </Step>
+
+      <Step title="Find or create customer">
+        Calls `CustomerRepositoryPort.findByEmail()`. If no customer matches, calls `CustomerRepositoryPort.create()` with the name and email from the request DTO.
+      </Step>
+
+      <Step title="Calculate total">
+        ```
+        total = product.priceInCents + BASE_FEE_IN_CENTS + DELIVERY_FEE_IN_CENTS
+        ```
+        Fee values are read from environment variables at startup and stored as instance variables.
+      </Step>
+
+      <Step title="Create transaction in PENDING state">
+        Generates a unique reference: `TXN-{Date.now()}-{random}`. Creates the transaction row with status `PENDING`. All fee values are captured at this point so the stored record reflects the fees that were in effect at purchase time.
+      </Step>
+
+      <Step title="Call WompiAdapter">
+        Calls `PaymentGatewayPort.processPayment()` with the reference, amount, card token, acceptance token, and customer email. The adapter computes the SHA256 integrity hash and sends the request to the Wompi API.
+      </Step>
+
+      <Step title="Update transaction status">
+        Updates the transaction row with the status returned by Wompi (`APPROVED`, `DECLINED`, `ERROR`, or `VOIDED`) and the Wompi gateway transaction ID.
+      </Step>
+
+      <Step title="Handle approved payment">
+        If status is `APPROVED`:
+        - Creates a delivery record via `DeliveryRepositoryPort.create()`
+        - Decrements product stock using `GREATEST()` at the database level to avoid race conditions under concurrent requests
+      </Step>
+
+      <Step title="Return result">
+        Returns `Result.ok` with transaction ID, reference, status, total, product name, and delivery address. If any earlier step returned `Result.fail`, that failure propagates directly to the controller.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="deliveries">
+    The deliveries module tracks the physical shipment of approved orders. Delivery records are created automatically by `ProcessPaymentUseCase` — there is no public endpoint to create them manually.
+
+    **Port interface**
+
+    ```typescript
+    // domain/ports/delivery.repository.port.ts
+    export interface DeliveryRepositoryPort {
+      create(data: {
+        transactionId: string;
+        customerId: string;
+        address: string;
+        city: string;
+        department: string;
+      }): Promise<DeliveryEntity>;
+      findByTransactionId(transactionId: string): Promise<DeliveryEntity | null>;
+    }
+    ```
+
+    Injection token: `'DELIVERY_REPOSITORY'`
+
+    **Endpoints**
+
+    | Method | Route | Description |
+    |--------|-------|-------------|
+    | `GET` | `/api/deliveries/transaction/:transactionId` | Returns the delivery record for a given transaction UUID |
+
+    New delivery records always start with status `PENDING`. Status transitions to `SHIPPED` or `DELIVERED` are managed outside the current scope of the application.
+  </Accordion>
+</AccordionGroup>
+
+## Naming conventions
+
+The codebase follows consistent naming patterns across all modules:
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Domain entity file | `<feature>.ts` | `product.ts` |
+| TypeORM entity file | `<feature>.entity.ts` | `product.entity.ts` |
+| TypeORM repository | `<feature>.typeorm.repository.ts` | `product.typeorm.repository.ts` |
+| Use case file | `<action>-<feature>.use-case.ts` | `get-products.use-case.ts` |
+| DTO file | `<action>-<feature>.dto.ts` | `create-transaction.dto.ts` |
+| Port file | `<feature>.repository.port.ts` | `product.repository.port.ts` |
+| Use case class | `<Action><Feature>UseCase` | `GetProductsUseCase` |
+| DTO class | `<Action><Feature>Dto` | `CreateTransactionDto` |

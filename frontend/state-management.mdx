@@ -1,0 +1,157 @@
+---
+title: "State management"
+description: "Redux Toolkit slices and localStorage persistence for the checkout flow."
+---
+
+The frontend uses [Redux Toolkit](https://redux-toolkit.js.org/) for global state. The store is composed of three slices, each responsible for a distinct domain.
+
+## Slices overview
+
+| Slice | Store key | Purpose |
+|-------|-----------|---------|
+| `productSlice` | `products` | Fetches and caches the product catalogue from the backend |
+| `checkoutSlice` | `checkout` | Owns the entire checkout flow — step tracking, form data, tokens, and payment result |
+| `transactionSlice` | `transaction` | Tracks the live status of a transaction during polling |
+
+## checkoutSlice
+
+`checkoutSlice` is the central state machine for the purchase flow. Its state shape is:
+
+```typescript
+interface CheckoutState {
+  currentStep: 1 | 2 | 3 | 4 | 5;
+  selectedProductId: string | null;
+  cardData: CardData | null;
+  deliveryData: DeliveryData | null;
+  cardToken: string | null;
+  acceptanceToken: string | null;
+  transactionId: string | null;
+  transactionResult: TransactionResult | null;
+  isProcessing: boolean;
+  error: string | null;
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `currentStep` | `1 \| 2 \| 3 \| 4 \| 5` | Current step in the checkout flow |
+| `selectedProductId` | `string \| null` | UUID of the product the user selected |
+| `cardData` | `CardData \| null` | Full card details submitted by the user |
+| `deliveryData` | `DeliveryData \| null` | Recipient name, email, phone, address, city, department |
+| `cardToken` | `string \| null` | Card token returned by Wompi after tokenization |
+| `acceptanceToken` | `string \| null` | Acceptance token returned by the backend (proxied from Wompi) |
+| `transactionId` | `string \| null` | UUID of the transaction created in the backend |
+| `transactionResult` | `TransactionResult \| null` | Final payment result including status, reference, and delivery info |
+| `isProcessing` | `boolean` | `true` while the payment sequence is in flight |
+| `error` | `string \| null` | Human-readable error message if the last action failed |
+
+### Actions
+
+| Action | Payload | Effect |
+|--------|---------|--------|
+| `selectProduct` | `string` (product UUID) | Sets `selectedProductId` and advances `currentStep` to `2` |
+| `setCardData` | `CardData` | Stores the card form data |
+| `setCardToken` | `string` | Stores the Wompi card token |
+| `setDeliveryData` | `DeliveryData` | Stores the delivery form data |
+| `setAcceptanceToken` | `string` | Stores the Wompi acceptance token |
+| `goToSummary` | — | Advances `currentStep` to `3` |
+| `startProcessing` | — | Sets `isProcessing: true` and clears `error` |
+| `paymentSuccess` | `TransactionResult` | Sets result, stores `transactionId`, advances to step `4` |
+| `paymentFailed` | `string` (error message) | Sets a DECLINED result with the error message, advances to step `4` |
+| `resetCheckout` | — | Clears all state and removes both localStorage keys |
+
+## productSlice
+
+`productSlice` exposes the async thunk `fetchProducts` (dispatched on `ProductPage` mount) and one synchronous action:
+
+| Action | Payload | Effect |
+|--------|---------|--------|
+| `fetchProducts` | — | Async thunk — calls `GET /api/products` and populates `items` |
+| `decrementProductStock` | `string` (product UUID) | Decrements `stockUnits` by 1 and updates `hasStock` in the local cache |
+
+## transactionSlice
+
+`transactionSlice` tracks the intermediate status of a transaction during status polling:
+
+| Action | Payload | Effect |
+|--------|---------|--------|
+| `setTransaction` | `{ id, reference, status, totalInCents }` | Stores the latest polled transaction data |
+| `setLoading` | `boolean` | Updates the `loading` flag |
+| `setError` | `string` | Stores an error message and sets `loading: false` |
+| `resetTransaction` | — | Resets the slice to its initial state |
+
+## localStorage persistence
+
+To survive accidental page refreshes, `checkoutSlice` reads from and writes to `localStorage` under the key `checkout_progress`.
+
+**Persisted fields:**
+
+| Field | Notes |
+|-------|-------|
+| `currentStep` | Restored directly, except step 3 is normalised back to step 2 on hydration |
+| `selectedProductId` | Only restored if a valid product UUID is present |
+| `deliveryData` | Full delivery form data |
+| `transactionId` | UUID of the in-progress or completed transaction |
+| `transactionResult` | Final payment result |
+
+**Not persisted:** `cardData`, `cardToken`, and `acceptanceToken` are intentionally excluded — they contain sensitive payment data that should never be written to `localStorage`.
+
+The `resetCheckout` action removes both `checkout_progress` and `checkout_form_draft` from `localStorage`, giving you a clean slate.
+
+<Tip>
+  Because `currentStep`, `selectedProductId`, and `deliveryData` are persisted, users who accidentally close or refresh the browser mid-checkout are returned to the correct step with their delivery information pre-filled rather than losing their progress.
+</Tip>
+
+## TypeScript interfaces
+
+All shared types are defined in `src/types/index.ts`:
+
+```typescript
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  priceInCents: number;
+  formattedPrice: string;
+  imageUrl: string;
+  stockUnits: number;
+  hasStock: boolean;
+}
+
+export interface CardData {
+  number: string;
+  holder: string;
+  expiryMonth: string;
+  expiryYear: string;
+  cvv: string;
+  lastFour: string;
+  brand: CardBrand; // 'visa' | 'mastercard' | 'unknown'
+}
+
+export interface DeliveryData {
+  fullName: string;
+  email: string;
+  phone?: string;
+  address: string;
+  city: string;
+  department: string;
+}
+
+export interface TransactionResult {
+  transactionId: string;
+  reference: string;
+  status: TransactionStatus; // 'APPROVED' | 'DECLINED' | 'ERROR' | 'PENDING'
+  totalInCents: number;
+  product: { id: string; name: string };
+  delivery?: { address: string; city: string };
+  errorMessage?: string;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+```
