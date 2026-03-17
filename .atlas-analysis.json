@@ -1,0 +1,114 @@
+{
+  "projectType": "saas",
+  "projectName": "Mi Tienda — Payment Checkout App",
+  "projectDescription": "A full-stack payment checkout application built with React and NestJS that allows users to browse products, enter payment and delivery details, and process transactions through the Wompi payment gateway.",
+  "theme": "almond",
+  "primaryColor": "#fbc926",
+  "lightColor": "#8c73fa",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/checkout-flow",
+              "concepts/payment-tokenization",
+              "concepts/architecture"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Backend",
+        "groups": [
+          {
+            "group": "Setup",
+            "pages": [
+              "backend/installation",
+              "backend/configuration",
+              "backend/database"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "backend/clean-architecture",
+              "backend/modules",
+              "backend/error-handling"
+            ]
+          },
+          {
+            "group": "Testing",
+            "pages": [
+              "backend/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Frontend",
+        "groups": [
+          {
+            "group": "Setup",
+            "pages": [
+              "frontend/installation",
+              "frontend/configuration"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "frontend/checkout-steps",
+              "frontend/state-management",
+              "frontend/form-validation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/overview",
+              "api/products",
+              "api/payments",
+              "api/transactions",
+              "api/deliveries"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "4-step checkout flow: product selection, payment & delivery form, summary, result",
+    "Secure card tokenization directly with Wompi (card data never reaches the backend)",
+    "Real-time transaction status polling until payment resolves (APPROVED / DECLINED / ERROR)",
+    "Clean Architecture NestJS backend with DDD modules and Result<T, E> pattern",
+    "Redux Toolkit state management with localStorage persistence for checkout progress",
+    "Automatic product seeding and PostgreSQL database with TypeORM synchronization",
+    "125 unit tests with ~99% code coverage on business logic",
+    "Swagger/OpenAPI documentation at /api/docs"
+  ],
+  "publicApiSurface": [
+    "GET /api/products",
+    "GET /api/products/:id",
+    "GET /api/payments/acceptance-token",
+    "POST /api/transactions",
+    "GET /api/transactions/:id",
+    "GET /api/transactions/:id/status",
+    "GET /api/deliveries/transaction/:transactionId"
+  ]
+}
